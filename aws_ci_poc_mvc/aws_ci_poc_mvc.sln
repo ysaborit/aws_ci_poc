@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "aws_ci_poc_mvc", "aws_ci_po
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "aws_ci_poc_mvc.Tests", "aws_ci_poc_mvc.Tests\aws_ci_poc_mvc.Tests.csproj", "{953145D2-1325-441E-9239-D6ED7DFDF176}"
 EndProject
+Project("{E53339B2-1760-4266-BCC7-CA923CBCF16C}") = "docker-compose", "docker-compose.dcproj", "{D1DEBF51-62C2-4EC3-9233-6A8681F59827}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -21,6 +23,10 @@ Global
 		{953145D2-1325-441E-9239-D6ED7DFDF176}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{953145D2-1325-441E-9239-D6ED7DFDF176}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{953145D2-1325-441E-9239-D6ED7DFDF176}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D1DEBF51-62C2-4EC3-9233-6A8681F59827}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D1DEBF51-62C2-4EC3-9233-6A8681F59827}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D1DEBF51-62C2-4EC3-9233-6A8681F59827}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D1DEBF51-62C2-4EC3-9233-6A8681F59827}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

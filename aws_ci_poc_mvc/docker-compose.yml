@@ -1,0 +1,8 @@
+version: '3'
+
+services:
+  aws_ci_poc_mvc:
+    image: awscipocmvc
+    build:
+      context: .\aws_ci_poc_mvc
+      dockerfile: Dockerfile
