@@ -3,7 +3,7 @@
   <PropertyGroup Label="Globals">
     <ProjectVersion>2.0</ProjectVersion>
     <DockerTargetOS>Windows</DockerTargetOS>
-    <ProjectGuid>d1debf51-62c2-4ec3-9233-6a8681f59827</ProjectGuid>
+    <ProjectGuid>86a4deda-a298-4f19-a1ba-4d02c8422ed1</ProjectGuid>
     <DockerLaunchAction>LaunchBrowser</DockerLaunchAction>
     <DockerServiceUrl>http://{ServiceIPAddress}</DockerServiceUrl>
     <DockerServiceName>aws_ci_poc_mvc</DockerServiceName>

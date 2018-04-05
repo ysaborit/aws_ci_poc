@@ -1,0 +1,510 @@
+Description: >
+
+    This template deploys a VPC, with a pair of public and private subnets spread 
+    across two Availabilty Zones. It deploys an Internet Gateway, with a default 
+    route on the public subnets. It deploys a pair of NAT Gateways (one in each AZ), 
+    and default routes for them in the private subnets.
+
+    It then deploys a highly available ECS cluster using an AutoScaling Group, with 
+    ECS hosts distributed across multiple Availability Zones. 
+
+    Finally, it deploys a pair of example ECS services from containers published in 
+    Amazon EC2 Container Registry (Amazon ECR).
+
+    Last Modified: 4th April 2018
+    Author: Yunier Saborit <ysaborit@gmail.com>
+
+Parameters:
+    
+    ProjectName:
+        Description: An environment name that will be prefixed to resource names
+        Type: String
+        Default: aspnetcipoc
+
+    KeyName:
+        Type: AWS::EC2::KeyPair::KeyName
+        Description: Name of an existing EC2 key pair to enable SSH access to the ECS instances.
+        Default: aws_ci_aspnet_poc
+
+Mappings:
+
+    # These are the latest ECS optimized AMIs as of [DATE]:
+    #
+    #   Windows_Server-2016-English-Full-ECS_Optimized-2017.11.24
+    #   ECS agent:     
+    #   Docker: 17.06.2-ee-5      
+    #   ecs-init:     
+    #
+    # You can find the latest available on this page of our documentation:
+    # http://docs.aws.amazon.com/AmazonECS/latest/developerguide/ecs-optimized_AMI.html
+    # (note the AMI identifier is region specific) 
+
+    AWSRegionToAMI:
+        us-west-2:
+            AMI: ami-a68e39de
+        us-west-1:
+            AMI: ami-e5686b85
+        us-east-2:
+            AMI: ami-6b9db60e
+        us-east-1:
+            AMI: ami-ec346f96
+        eu-west-2: 
+            AMI: ami-29574c4d
+        eu-west-1:
+            AMI: ami-48eb7931
+        eu-central-1:
+            AMI: ami-ee30a281
+        ca-central-1:
+            AMI: ami-1e91147a
+        ap-southeast-2: 
+            AMI: ami-252fd247
+        ap-southeast-1:
+            AMI: ami-a6fa89da
+        ap-northeast-2:
+            AMI: ami-0e63c360
+        ap-northeast-1:
+            AMI: ami-bf3ca4d9
+
+Resources:
+
+    VPC: 
+        Type: AWS::EC2::VPC
+        Properties:
+            CidrBlock: 10.0.0.0/16
+            EnableDnsSupport: 'true'
+            EnableDnsHostnames: 'true'
+            # Tags: 
+                # - Key: Name 
+                  # Value: !Ref ProjectName
+    InternetGateway:
+        # DependsOn: PublicSubnet1
+        Type: AWS::EC2::InternetGateway
+
+    InternetGatewayAttachment:
+        # DependsOn: InternetGateway
+        Type: AWS::EC2::VPCGatewayAttachment
+        Properties:
+            InternetGatewayId: !Ref InternetGateway
+            VpcId: !Ref VPC
+
+    PublicSubnet1: 
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Select [ 0, !GetAZs ]
+            CidrBlock: 10.0.0.0/24
+            MapPublicIpOnLaunch: true
+            Tags: 
+                - Key: Name 
+                  Value: !Sub ${ProjectName} Public Subnet (AZ1)
+
+    PublicSubnet2: 
+        Type: AWS::EC2::Subnet
+        Properties:
+            VpcId: !Ref VPC
+            AvailabilityZone: !Select [ 1, !GetAZs ]
+            CidrBlock: 10.0.1.0/24
+            MapPublicIpOnLaunch: true
+            Tags: 
+                - Key: Name 
+                  Value: !Sub ${ProjectName} Public Subnet (AZ2)
+
+    PublicRouteTable:
+        Type: AWS::EC2::RouteTable
+        Properties: 
+            VpcId: !Ref VPC
+            Tags: 
+                - Key: Name 
+                  Value: !Sub ${ProjectName} Public Routes
+
+    DefaultPublicRoute: 
+        Type: AWS::EC2::Route
+        # DependsOn: InternetGatewayAttachment
+        Properties: 
+            RouteTableId: !Ref PublicRouteTable
+            DestinationCidrBlock: 0.0.0.0/0
+            GatewayId: !Ref InternetGateway
+
+    PublicSubnet1RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PublicSubnet1
+
+    PublicSubnet2RouteTableAssociation:
+        Type: AWS::EC2::SubnetRouteTableAssociation
+        Properties:
+            RouteTableId: !Ref PublicRouteTable
+            SubnetId: !Ref PublicSubnet2
+
+    ECSHostSecurityGroup:
+        Type: AWS::EC2::SecurityGroup
+        Properties: 
+            VpcId: !Ref VPC
+            GroupDescription: ECS Security Group
+
+    ECSSecurityGroupHTTPinbound:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+            GroupId: !Ref ECSHostSecurityGroup
+            IpProtocol: tcp
+            FromPort: 80
+            ToPort: 80
+            # CidrIp: 0.0.0.0/0
+
+    ECSSecurityGroupRDPinbound:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+            GroupId: !Ref ECSHostSecurityGroup
+            IpProtocol: tcp
+            FromPort: 3389
+            ToPort: 3389
+            # CidrIp: 0.0.0.0/0
+
+    ECSSecurityGroupALBports:
+        Type: AWS::EC2::SecurityGroupIngress
+        Properties:
+            GroupId: !Ref ECSHostSecurityGroup
+            IpProtocol: tcp
+            FromPort: 31000
+            ToPort: 61000
+            # CidrIp: 0.0.0.0/0
+            SourceSecurityGroupId: !Ref ECSHostSecurityGroup
+
+    ECSCluster:
+        Type: AWS::ECS::Cluster
+        Properties:
+            ClusterName: !Ref AWS::StackName
+
+    CloudWatchLogsGroup:
+        Type: AWS::Logs::LogGroup
+        Properties: 
+            LogGroupName: !Ref AWS::StackName
+            RetentionInDays: 14
+
+    TaskDefinition:
+        Type: AWS::ECS::TaskDefinition
+        Properties:
+            # Family: aspnetmvc
+            ContainerDefinitions:
+                - Name: aspnetcipoc
+                  Essential: true
+                  Image: 148469905714.dkr.ecr.us-east-1.amazonaws.com/aspnetmvc:latest
+                  Cpu: 256
+                  Memory: 2048
+                  # Environment: 
+                    # - Name: PRODUCT_SERVICE_URL
+                      # Value: !Ref ProductServiceUrl
+                  PortMappings:
+                    - ContainerPort: 80
+                    - HostPort: 80
+                  LogConfiguration:
+                    LogDriver: awslogs
+                    Options:
+                        awslogs-group: !Ref CloudWatchLogsGroup
+                        awslogs-region: !Ref AWS::Region
+                        awslogs-stream-prefix: aspnetcipoc
+
+    LoadBalancer:
+        Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+        DependsOn: InternetGatewayAttachment
+        Properties:
+            Name: aspnetcipoc
+            Scheme: internet-facing
+            Subnets: 
+              - !Ref PublicSubnet1
+              - !Ref PublicSubnet2
+            LoadBalancerAttributes:
+                - Key: idle_timeout.timeout_seconds
+                  Value: 30
+            SecurityGroups: 
+                - !Ref ECSHostSecurityGroup
+
+    ECSTargetGroup:
+        Type: AWS::ElasticLoadBalancingV2::TargetGroup
+        DependsOn: LoadBalancer
+        Properties:
+            Name: ECSTargetGroup
+            VpcId: !Ref VPC
+            Port: 80
+            Protocol: HTTP
+            Matcher: 
+                HttpCode: 200-299
+            HealthCheckIntervalSeconds: 300
+            HealthCheckPath: /
+            HealthCheckProtocol: HTTP
+            HealthCheckTimeoutSeconds: 5
+            HealthyThresholdCount: 2
+            UnhealthyThresholdCount: 2
+
+    LoadBalancerListener:
+        Type: AWS::ElasticLoadBalancingV2::Listener
+        DependsOn: ECSServiceRole
+        Properties:
+            LoadBalancerArn: !Ref LoadBalancer
+            Port: 80
+            Protocol: HTTP 
+            DefaultActions: 
+                - Type: forward
+                  TargetGroupArn: !Ref ECSTargetGroup
+
+    ListenerRule:
+        Type: AWS::ElasticLoadBalancingV2::ListenerRule
+        DependsOn: LoadBalancerListener
+        Properties:
+            ListenerArn: !Ref LoadBalancerListener
+            Priority: 1
+            Conditions:
+                - Field: path-pattern
+                  Values: 
+                    - /
+            Actions:
+                - TargetGroupArn: !Ref ECSTargetGroup
+                  Type: forward
+
+    EC2Role:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument:
+                Statement:
+                  - Effect: "Allow"
+                    Principal:
+                        Service: 
+                          - "ec2.amazonaws.com"
+                    Action:
+                      - "sts:AssumeRole"
+            Path: /
+            Policies:
+                - PolicyName: ecs-service
+                  PolicyDocument:
+                    Statement: 
+                      - Effect: "Allow"
+                        Action: "*"
+                        Resource: "*"
+
+    ECSInstanceProfile: 
+        Type: AWS::IAM::InstanceProfile
+        Properties:
+            Path: /
+            Roles: 
+                - !Ref EC2Role
+
+    ECSLaunchConfiguration:
+        Type: AWS::AutoScaling::LaunchConfiguration
+        Properties:
+            ImageId:  !FindInMap [AWSRegionToAMI, !Ref "AWS::Region", AMI]
+            InstanceType: t2.small
+            SecurityGroups: 
+                - !Ref ECSHostSecurityGroup
+            KeyName: !Ref KeyName
+            BlockDeviceMappings:
+                - DeviceName: /dev/sda1
+                  Ebs:
+                      VolumeSize: 100
+                      VolumeType: gp2
+            IamInstanceProfile: !Ref ECSInstanceProfile
+            # UserData: !If
+                # - SetEndpointToECSAgent
+                # - Fn::Base64: !Sub |
+                    # <powershell>
+                    # [Environment]::SetEnvironmentVariable("ECS_BACKEND_HOST", "${EcsEndpoint}", "Machine")
+                    # Import-Module ECSTools
+                    # Initialize-ECSAgent -Cluster ${EcsClusterName} -EnableTaskIAMRole -LoggingDrivers '["json-file","awslogs"]'
+                    # </powershell>
+                # - Fn::Base64: !Sub |
+                    # <powershell>
+                    # Import-Module ECSTools
+                    # Initialize-ECSAgent -Cluster ${EcsClusterName} -EnableTaskIAMRole -LoggingDrivers '["json-file","awslogs"]'
+                    # </powershell>
+            UserData: !Base64 
+                Fn::Join:
+                    - ''
+                    - - '<script>
+                        
+                        '
+                      - 'cfn-init.exe -v -s '
+                      - !Ref 'AWS::StackId'
+                      - ' -r ECSLaunchConfiguration'
+                      - ' --region '
+                      - !Ref 'AWS::Region'
+                      - '
+
+                        '
+                      - 'cfn-signal.exe -e %ERRORLEVEL% --stack '
+                      - !Ref 'AWS::StackName'
+                      - ' --resource ECSAutoScalingGroup '
+                      - ' --region '
+                      - !Ref 'AWS::Region'
+                      - '
+                        
+                        '
+                      - </script>
+        Metadata:
+            AWS::CloudFormation::Init:
+                config:
+                    commands:
+                        01_import_powershell_module:
+                            command: !Sub powershell.exe -Command Import-Module ECSTools
+                        02_add_instance_to_cluster:
+                            command: !Sub powershell.exe -Command Initialize-ECSAgent -Cluster ${ECSCluster} -EnableTaskIAMRole
+                    files:
+                        c:\cfn\cfn-hup.conf:
+                            content: !Join ['', ['[main]
+                                    ', stack=, !Ref 'AWS::StackId', '
+                                    ', region=, !Ref 'AWS::Region', '
+                                    ']]
+                        c:\cfn\hooks.d\cfn-auto-reloader.conf:
+                            content: !Join ['', ['[cfn-auto-reloader-hook]
+                                    ', 'triggers=post.update
+                                    ', 'path=Resources.ECSLaunchConfiguration.Metadata.AWS::CloudFormation::Init
+                                    ', 'action=cfn-init.exe -v -s ', !Ref 'AWS::StackId', ' -r ECSLaunchConfiguration',
+                                    ' --region ', !Ref 'AWS::Region', '
+                                    ']]
+                    services: 
+                        windows:
+                            cfn-hup: 
+                                enabled: 'true'
+                                ensureRunning: 'true'
+                                files: 
+                                    - c:\cfn\cfn-hup.conf
+                                    - c:\etc\cfn\hooks.d\cfn-auto-reloader.conf
+
+    ECSAutoScalingGroup:
+        Type: AWS::AutoScaling::AutoScalingGroup
+        Properties: 
+            VPCZoneIdentifier: 
+              - !Ref PublicSubnet1
+              - !Ref PublicSubnet2
+            LaunchConfigurationName: !Ref ECSLaunchConfiguration
+            MinSize: 2
+            MaxSize: 4
+            DesiredCapacity: 2
+        CreationPolicy:
+            ResourceSignal: 
+                Timeout: PT20M
+        UpdatePolicy:
+            AutoScalingRollingUpdate:
+                MinInstancesInService: 1
+                MaxBatchSize: 1
+                PauseTime: PT20M
+                WaitOnResourceSignals: true
+
+    ECSServiceRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument: 
+                Statement: 
+                  - Effect: "Allow"
+                    Principal:
+                        Service: 
+                          - "ecs.amazonaws.com"
+                    Action:
+                      - "sts:AssumeRole"
+            Path: /
+            Policies: 
+                - PolicyName: ecs-service
+                  PolicyDocument:
+                    Statement:
+                      - Effect: "Allow"
+                        Action:
+                          - "elasticloadbalancing:DeregisterInstancesFromLoadBalancer"
+                          - "elasticloadbalancing:DeregisterTargets"
+                          - "elasticloadbalancing:Describe*"
+                          - "elasticloadbalancing:RegisterInstancesWithLoadBalancer"
+                          - "elasticloadbalancing:RegisterTargets"
+                          - "ec2:Describe*"
+                          - "ec2:AuthorizeSecurityGroupIngress"
+                        Resource: "*"
+
+    Service: 
+        Type: AWS::ECS::Service
+        DependsOn: 
+          - ListenerRule
+          - ECSAutoScalingGroup
+        Properties: 
+            Cluster: !Ref ECSCluster
+            Role: !Ref ECSServiceRole
+            DesiredCount: 0
+            TaskDefinition: !Ref TaskDefinition
+            LoadBalancers: 
+                - ContainerName: aspnetcipoc
+                  ContainerPort: 80
+                  TargetGroupArn: !Ref ECSTargetGroup
+
+    AutoscalingRole:
+        Type: AWS::IAM::Role
+        Properties:
+            AssumeRolePolicyDocument: 
+                Statement:
+                  - Effect: "Allow"
+                    Principal: 
+                        Service: 
+                          - "application-autoscaling.amazonaws.com"
+                    Action: 
+                      - "sts:AssumeRole"
+            Path: /
+            Policies:
+                - PolicyName: service-autoscaling
+                  PolicyDocument:
+                    Statement: 
+                      - Effect: "Allow"
+                        Action: 
+                          - "application-autoscaling:*"
+                          - "cloudwatch:DescribeAlarms"
+                          - "cloudwatch:PutMetricAlarm"
+                          - "ecs:UpdateService"
+                          - "ecs:DescribeServices"
+                        Resource: "*"
+
+    ServiceScalingTarget:
+        Type: AWS::ApplicationAutoScaling::ScalableTarget
+        DependsOn: Service
+        Properties:
+            MaxCapacity: 4
+            MinCapacity: 1
+            ResourceId: 
+                !Join
+                  - ''
+                  - - 'service/'
+                    - !Ref ECSCluster
+                    - '/'
+                    - !GetAtt Service.Name
+            RoleARN: !GetAtt AutoscalingRole.Arn
+            ScalableDimension: ecs:service:DesiredCount
+            ServiceNamespace: ecs
+
+    ServiceScalingPolicy:
+        Type: AWS::ApplicationAutoScaling::ScalingPolicy
+        Properties:
+            PolicyName: AStepPolicy
+            PolicyType: StepScaling
+            ScalingTargetId: !Ref ServiceScalingTarget
+            StepScalingPolicyConfiguration:
+                AdjustmentType: PercentChangeInCapacity
+                Cooldown: 60
+                MetricAggregationType: Average
+                StepAdjustments:
+                    - MetricIntervalLowerBound: 0
+                      ScalingAdjustment: 200
+
+    ALB500sAlarmScaleUp:
+        Type: AWS::CloudWatch::Alarm
+        Properties:
+            EvaluationPeriods: 1
+            Statistic: Average
+            Threshold: 10
+            AlarmDescription: Alarm if our ALB generates too many HTTP 500s.
+            Period: 60
+            AlarmActions: 
+              - !Ref ServiceScalingPolicy
+            Namespace: AWS/ApplicationELB
+            Dimensions:
+                - Name: ECSService
+                  Value: !Ref Service
+            ComparisonOperator: GreaterThanThreshold
+            MetricName: HTTPCode_ELB_5XX_Count
+Outputs:
+
+    WebsiteServiceUrl: 
+        Description: The URL endpoint for the website service
+        Value: !Ref LoadBalancer

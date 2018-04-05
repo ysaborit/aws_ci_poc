@@ -1,0 +1,33 @@
+"taskdefinition": {
+            "Type": "AWS::ECS::TaskDefinition",
+            "Properties": {
+                "ContainerDefinitions": [{
+                    "Name": {
+                      "Ref" : "AppName"
+                      },
+                    "Cpu": "200",
+                    "Essential": "true",
+                    "Image": {
+                        "Ref" : "ECSImageName"
+                      },
+                    "Memory": "2048",
+                    "LogConfiguration": {
+                        "LogDriver": "awslogs",
+                        "Options": {
+                            "awslogs-group": {
+                                "Ref": "CloudwatchLogsGroup"
+                            },
+                            "awslogs-region": {
+                                "Ref": "AWS::Region"
+                            },
+                            "awslogs-stream-prefix": {
+                              "Ref" : "AppName"
+                              }
+                        }
+                    },
+                    "PortMappings": [{
+                        "ContainerPort": 80
+                    }]
+                }]
+            }
+        }
